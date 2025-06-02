@@ -103,7 +103,7 @@
                     $message = 'Music data get successfully';
                 }
 
-                return $this->sendResponse(!empty($music) > 0 ? true : false, $message, $music);
+                return $this->sendResponse((!empty($music)) > 0 ? true : false, $message, $music);
             } catch (Exception $e) {
 
                 // Log the error
