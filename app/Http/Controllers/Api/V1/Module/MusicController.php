@@ -33,7 +33,7 @@
 
                 return $this->sendResponse(true, 'Musics retrieved successfully.', $response);
             } catch (Exception $e) {
-                
+
                 // Log the error
                 Log::error('Error in retrieving Music: ' , [
                     'message' => $e->getMessage(),
@@ -66,6 +66,8 @@
                 $requestData['user_id'] = $requestData['user_id'] ?? null;
                 $requestData['title'] = $requestData['title'] ?? '';
                 $requestData['file_path'] = null;
+                $requestData['created_at'] = now();
+                $requestData['updated_at'] = now();
 
                 // Handle file upload
                 if ($request->hasFile('file')) {
@@ -134,13 +136,14 @@
 
                 $musicId = $request->input('music_id');
 
-                
+
                 $music = Music::find($musicId);
 
                 $requestData = $request->except(['music_id', 'file']);
                 $requestData['user_id'] = $requestData['user_id'] ?? $music->user_id;
                 $requestData['title'] = $requestData['title'] ?? $music->title;
                 $requestData['file_path'] = $music->file_path;
+                $requestData['updated_at'] = now();
 
                 // Handle file upload
                 if ($request->hasFile('file')) {
@@ -165,7 +168,7 @@
             }
         }
 
-        public function destroy(Request $request)   
+        public function destroy(Request $request)
         {
             try {
                 $rules = [
