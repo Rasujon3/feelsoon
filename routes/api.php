@@ -52,6 +52,7 @@
         Route::prefix('musics')->name('musics.')->group(function () {
             Route::get('/', [MusicController::class, 'index'])->name('index');
             Route::post('/', [MusicController::class, 'store'])->name('store');
+            Route::get('music/{filename}', [MusicController::class, 'getMusic'])->name('getMusic');
             Route::get('/{id}', [MusicController::class, 'show'])->name('show');
             Route::post('/update', [MusicController::class, 'update'])->name('update');
             Route::post('/destroy', [MusicController::class, 'destroy'])->name('destroy');

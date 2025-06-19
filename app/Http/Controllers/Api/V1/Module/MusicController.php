@@ -97,6 +97,30 @@
             }
         }
 
+        public function getMusic($filename)
+        {
+            try {
+                $path = public_path('files/music/mp3/' . $filename);
+
+                if (!file_exists($path)) {
+                    return $this->sendResponse(false, '404, File not found.', []);
+                }
+
+                return response()->file($path);
+            } catch (Exception $e) {
+
+                // Log the error
+                Log::error('Error in get Music: ', [
+                    'message' => $e->getMessage(),
+                    'code' => $e->getCode(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+
+                return $this->sendResponse(false, 'Something went wrong!!!', []);
+            }
+        }
+
         public function show($musicId)
         {
             try {
@@ -227,7 +251,8 @@
             $file->move($directory, $fileName);
 
             // path & file name in the database
-            $path = $filePath . '/' . $fileName;
+            # $path = $filePath . '/' . $fileName;
+            $path = $fileName;
             return $path;
         }
 
@@ -252,13 +277,18 @@
             $file->move($directory, $fileName);
 
             // Store path & file name in the database
-            $path = $filePath . '/' . $fileName;
+            # $path = $filePath . '/' . $fileName;
+            $path = $fileName;
             return $path;
         }
         private function deleteOldFile($data)
         {
             if (!empty($data->file_path)) {
-                $oldFilePath = public_path($data->file_path); // Use without prepending $filePath
+                $filePath = 'files/music/mp3';
+                $directory = $data->file_path;
+                $path = $filePath . '/' . $directory;
+
+                $oldFilePath = public_path($path); // Use without prepending $filePath
                 if (file_exists($oldFilePath)) {
                     unlink($oldFilePath); // Delete the old file
                     return true;
