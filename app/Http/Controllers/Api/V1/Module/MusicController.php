@@ -22,10 +22,14 @@
     {
         use UniformResponseTrait, UploadFileToStorage;
 
-        public function index(): JsonResponse
+        public function index(Request $request): JsonResponse
         {
             try {
                 $query = Music::query();
+
+                if ($request->has('title') && !empty($request->title)) {
+                    $query->where('title', 'like', '%' . $request->title . '%');
+                }
 
                 $response = [
                     'data'  => $query->get(),

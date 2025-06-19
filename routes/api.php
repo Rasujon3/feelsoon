@@ -63,6 +63,13 @@
         });
 
         Route::middleware('auth:sanctum')->group(function () {
+
+            Route::post('my-suggessions', [PostController::class, 'mySuggessions']);
+            Route::post('my-friend-lists', [PostController::class, 'myFriendLists']);
+            Route::get('/remove-friend-list/{id}', [PostController::class, 'removeFriendList']);
+            Route::post('trash-suggestion', [PostController::class, 'trashSuggestion']);
+            Route::post('my-request-list', [PostController::class, 'myFollowers']);
+
             Route::prefix('account')->name('account.')->group(function () {
                 Route::post('profile', [ProfileController::class, 'index'])->name('profile');
                 Route::post('profile/update', [ProfileController::class, 'update'])->name('profile.update');

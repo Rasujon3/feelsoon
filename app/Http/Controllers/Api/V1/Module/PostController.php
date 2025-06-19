@@ -15,6 +15,7 @@
     use Illuminate\Http\Request;
     use Illuminate\Support\Facades\DB;
     use Illuminate\Support\Facades\Validator;
+    use App\Http\Resources\Api\V1\UserResource;
 
     class PostController extends Controller
     {
@@ -467,5 +468,229 @@
             $message = 'Post view added successfully.';
 
             return $this->sendResponse(TRUE, $message);
+        }
+
+        public function myFollowers(Request $request)
+        {
+            try
+            {
+                $user_ids = DB::table('followings')
+                    ->where('followings.following_id',auth()->user()->user_id)
+                    ->where('followings.status',0)
+                    ->pluck('user_id')
+
+                    ->toArray();
+
+                //return $user_ids;
+                $users = User::with('followings','followers')->whereIn('user_id',$user_ids)->paginate(10);
+
+                //$users = $users->withCount('followings', 'followers')->paginate(20);
+
+
+
+                $totalRecords = $users->total();
+
+
+
+                $totalPages = $users->lastPage();
+
+                $allUsers = UserResource::collection($users->items());
+
+                $currentPage = $request->get('page', 1);
+
+                $response = [
+                    'total_records' => $totalRecords,
+                    'total_pages' => $totalPages,
+                    'current_page' => intval($currentPage),
+                    'users' => !empty($users) ? $allUsers : [],
+                ];
+
+                return response()->json(['status'=>count($allUsers)>0, 'status_code'=>200, 'message'=>"Data Found", 'result'=>$response]);
+
+            }catch(Exception $e){
+                return response()->json(['status'=>false, 'code'=>$e->getCode(), 'message'=>$e->getMessage()],500);
+            }
+
+        }
+
+        public function mySuggessions(Request $request)
+        {
+            $distance = 10;
+
+            $user = User::where('user_id', auth()->id())->first();
+
+            //return $user;
+
+            $lat = $user->user_latitude;
+            $lon = $user->user_longitude;
+            $search = $request->input('search');
+
+            try {
+
+                $delete_ids = DB::table('trash_suggestions')->where('user_id',auth()->id())->pluck('suggested_id')->toArray();
+                //return $delete_ids;
+                $query = User::query();
+
+                if ($search) {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('users.user_firstname', 'LIKE', "%$search%")
+                            ->orWhere('users.user_lastname', 'LIKE', "%$search%")
+                            ->orWhere('users.user_name', 'LIKE', "%$search%");
+                    });
+                }
+
+                $users = $query->whereNotIN('user_id',$delete_ids)->where('user_id','!=',auth()->id())->withCount('followings', 'followers')
+                    ->select(
+                        "users.user_id",
+                        "users.user_name",
+                        "users.user_phone",
+                        "users.user_latitude",
+                        "users.user_longitude",
+                        "users.user_firstname",
+                        "users.user_lastname",
+                        "users.user_picture",
+                        "users.user_gender"
+                    )
+                    ->selectRaw("6371 * acos(cos(radians(?))
+                      * cos(radians(users.user_latitude))
+                      * cos(radians(users.user_longitude) - radians(?))
+                      + sin(radians(?))
+                      * sin(radians(users.user_latitude))) AS distance", [$lat, $lon, $lat])
+                    ->whereNotNull('users.user_latitude')
+                    ->whereNotNull('users.user_longitude')
+                    //->having('distance', '<=', $distance)
+                    ->orderBy('distance', 'ASC')
+                    ->paginate(10);
+
+                $response = [
+                    'total_records' => $users->total(),
+                    'total_pages'   => $users->lastPage(),
+                    'current_page'  => intval($request->input('page', 1)),
+                    'users'         => UserResource::collection($users->items()),
+                ];
+
+                return response()->json([
+                    'status'      => true,
+                    'status_code'=> 200,
+                    'message'     => "Data Found",
+                    'result'      => $response
+                ]);
+
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status'  => false,
+                    'code'    => $e->getCode(),
+                    'message' => $e->getMessage()
+                ], 500);
+            }
+        }
+
+        public function trashSuggestion(Request $request)
+        {
+            try
+            {
+                $count = DB::table('trash_suggestions')->where('user_id',auth()->user()->user_id)->where('suggested_id',$request->user_id)->count();
+                if($count > 0)
+                {
+                    return response()->json(['status'=>false, 'message'=>'Already delete the user'],400);
+                }
+                $data = array();
+                $data['user_id'] = auth()->user()->user_id;
+                $data['suggested_id'] = $request->user_id;
+                DB::table('trash_suggestions')->insert($data);
+                return response()->json(['status'=>true, 'message'=>'Successfully removed the user from your suggestion list']);
+            }catch (\Exception $e) {
+                return response()->json([
+                    'status'  => false,
+                    'code'    => $e->getCode(),
+                    'message' => $e->getMessage()
+                ], 500);
+            }
+        }
+
+        public function myFriendLists(Request $request)
+        {
+            try
+            {
+                $user = User::where('user_id', auth()->id())->first();
+                //where auth user follow
+                $first_ids = DB::table('followings')
+                    ->where('status',1)
+                    ->where('user_id',auth()->id())
+                    ->pluck('following_id')
+                    ->toArray();
+
+                //where anyone foller the auth user
+                $second_ids = DB::table('followings')
+                    ->where('status',1)
+                    ->where('following_id',auth()->id())
+                    ->pluck('user_id')
+                    ->toArray();
+
+
+
+                $user_ids = array_merge($first_ids,$second_ids);
+
+
+                $users = User::with('followings','followers')->whereIn('user_id',$user_ids)->paginate(10);
+
+                //$users = $users->withCount('followings', 'followers')->paginate(20);
+
+
+
+                $totalRecords = $users->total();
+
+
+
+                $totalPages = $users->lastPage();
+
+                $allUsers = UserResource::collection($users->items());
+
+                $currentPage = $request->get('page', 1);
+
+                $response = [
+                    'total_records' => $totalRecords,
+                    'total_pages' => $totalPages,
+                    'current_page' => intval($currentPage),
+                    'users' => !empty($users) ? $allUsers : [],
+                ];
+
+                return response()->json(['status'=>count($allUsers)>0, 'status_code'=>200, 'message'=>"Data Found", 'result'=>$response]);
+
+            }catch (\Exception $e) {
+                return response()->json([
+                    'status'  => false,
+                    'code'    => $e->getCode(),
+                    'message' => $e->getMessage()
+                ], 500);
+            }
+        }
+
+        public function removeFriendList($id)
+        {
+            try
+            {
+                $data = \App\Models\Following::where([
+                    'user_id' => auth()->id(),
+                    'following_id' => $id
+                ])
+                    ->orWhere([
+                        'user_id' => $id,
+                        'following_id' => auth()->id()
+                    ])
+                    ->delete();
+                $friend = DB::table('friends')
+                    ->where(['user_one_id'=>auth()->id(),'user_two_id'=>$id])
+                    ->orWhere(['user_one_id'=>$id,'user_two_id'=>auth()->id()])
+                    ->delete();
+                return response()->json(['status'=>true, 'message'=>'Successfully remove the user from your friend list']);
+
+            }catch (\Exception $e) {
+                return response()->json([
+                    'status'  => false,
+                    'code'    => $e->getCode(),
+                    'message' => $e->getMessage()
+                ], 500);
+            }
         }
     }
