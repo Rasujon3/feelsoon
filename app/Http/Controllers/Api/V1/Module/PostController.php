@@ -8,6 +8,7 @@
     use App\Models\PostPhoto;
     use App\Models\PostPhotoAlbum;
     use App\Models\PostView;
+    use App\Models\User;
     use App\Traits\Api\UniformResponseTrait;
     use App\Traits\UploadFileToStorage;
     use Illuminate\Http\JsonResponse;
@@ -102,7 +103,7 @@
             $posts = $posts->whereNull('deleted_at')->where(function ($q) {
                 $q->whereHas('photos')->orWhereHas('videos');
             })
-            // ->dd();
+//             ->dd();
             ->paginate(20);
             $totalRecords = $posts->total();
             $totalPages = $posts->lastPage();
@@ -116,7 +117,11 @@
                 'posts' => !empty($posts) ? $posts : null,
             ];
 
-            return $this->sendResponse($totalRecords > 0 ? true : false, 'Posts data get successfully', $response);
+            return $this->sendResponse(
+                $totalRecords > 0 ? true : false,
+                'Posts data get successfully',
+                $response
+            );
         }
 
         public function show($postId, Request $request)
@@ -150,12 +155,13 @@
         {
             $rules = [
                 // Common Input for all type
-                'user_type' => 'required', // user, page
-                'privacy' => 'required', // public, private
+                'user_type' => 'required|in:user,page', // user, page
+                'privacy' => 'required|in:public,private', // public, private
                 // 'text' => 'required', // content
                 'post_latitude' => 'required',
                 'post_longitude' => 'required',
                 // 'post_type' => 'nullable', // photos, videos
+//                'medias' => 'required|file',
             ];
 
             $validator = Validator::make($request->post(), $rules);
@@ -298,7 +304,7 @@
                             }
                         }
 
-                        $mentionUser = User::find(mentionUserId);
+                        $mentionUser = User::find($mentionUserId);
                         if(!empty($mentionUser->device_token)) {
                             $pushMessage = auth('sanctum')->user()->first_name . ' mentioned you in their post.';
                             $pushData = [
@@ -311,7 +317,13 @@
                     }
                 }
 
-                $post = Post::selectRaw('posts.*, posts_photos.source, posts_videos.source as source_video, posts_videos.thumbnail, category_name')
+                $post = Post::selectRaw(
+                            'posts.*,
+                            posts_photos.source,
+                            posts_videos.source as source_video,
+                            posts_videos.thumbnail,
+                            category_name'
+                            )
                     ->leftJoin('posts_photos', 'posts.post_id', 'posts_photos.post_id')
                     ->leftJoin('posts_videos', 'posts.post_id', 'posts_videos.post_id')
                     ->leftJoin('posts_videos_categories', 'posts_videos.category_id', 'posts_videos_categories.category_id')
@@ -364,7 +376,7 @@
         {
             $rules = [
                 // Common Input for all type
-                'post_id' => 'required',
+                'post_id' => 'required|exists:posts,post_id',
             ];
 
             $validator = Validator::make($request->post(), $rules);
@@ -401,7 +413,7 @@
         public function destroy(Request $request): JsonResponse
         {
             $rules = [
-                'post_id' => 'required',
+                'post_id' => 'required|exists:posts,post_id',
             ];
 
             $validator = Validator::make($request->post(), $rules);
