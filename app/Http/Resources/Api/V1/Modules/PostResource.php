@@ -5,6 +5,7 @@
     use Illuminate\Http\Request;
     use Illuminate\Http\Resources\Json\JsonResource;
     use Carbon\Carbon;
+    use Illuminate\Support\Facades\Log;
 
     class PostResource extends JsonResource
     {
@@ -76,7 +77,12 @@
                 'thumbnail' => !empty($this->thumbnail) ? $this->thumbnail : NULL,
                 'category_name' => $this->category_name,
                 // 'post_time' => $timeDiff,
-                'photos' => $this->photos->count() > 0 ? $this->photos->pluck('source')->toArray() : []
+                'photos' => $this->photos->count() > 0 ? $this->photos->pluck('source')->toArray() : [],
+                'music' => !empty($this->musics) ? [
+                    'id' => $this->musics->id,
+                    'title' => $this->musics->title,
+                    'file_path' => $this->musics->file_path,
+                ] : null,
             ];
         }
 

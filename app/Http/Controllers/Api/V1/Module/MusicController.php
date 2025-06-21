@@ -3,17 +3,11 @@
     namespace App\Http\Controllers\Api\V1\Module;
 
     use App\Http\Controllers\Controller;
-    use App\Http\Resources\Api\V1\Modules\PostResource;
     use App\Models\Music;
-    use App\Models\Post;
-    use App\Models\PostPhoto;
-    use App\Models\PostPhotoAlbum;
-    use App\Models\PostView;
     use App\Traits\Api\UniformResponseTrait;
     use App\Traits\UploadFileToStorage;
     use Illuminate\Http\JsonResponse;
     use Illuminate\Http\Request;
-    use Illuminate\Support\Facades\DB;
     use Illuminate\Support\Facades\Validator;
     use Illuminate\Support\Facades\Log;
     use Exception;
@@ -25,11 +19,13 @@
         public function index(Request $request): JsonResponse
         {
             try {
-                $query = Music::query();
-
-                if ($request->has('title') && !empty($request->title)) {
-                    $query->where('title', 'like', '%' . $request->title . '%');
-                }
+                $query = Music::withCount('posts')
+                    ->when($request->filled('title'), function ($q) use ($request) {
+                        $q->where('title', 'like', '%' . $request->title . '%');
+                    })
+                    ->when($request->filled('singer_name'), function ($q) use ($request) {
+                        $q->where('singer_name', 'like', '%' . $request->singer_name . '%');
+                    });
 
                 $response = [
                     'data'  => $query->get(),
@@ -46,7 +42,7 @@
                     'trace' => $e->getTraceAsString()
                 ]);
 
-                return $this->sendResponse(false, 'Something went wrong!!!', []);
+                return $this->sendResponse(false, 'Something went wrong!!!', [], 500);
             }
         }
 
@@ -54,9 +50,10 @@
         {
             try {
                 $rules = [
-                    'user_id'   => 'nullable|exists:users,id',
-                    'title'     => 'required|string|max:100',
-                    'file'      => 'nullable|mimetypes:audio/mpeg,audio/mp3|max:5120',
+                    'user_id'     => 'nullable|exists:users,user_id',
+                    'title'       => 'required|string|max:100',
+                    'singer_name' => 'nullable|string|max:100',
+                    'file'        => 'nullable|mimetypes:audio/mpeg,audio/mp3|max:5120',
                 ];
 
                 $validator = Validator::make($request->all(), $rules);
@@ -69,6 +66,7 @@
                 $requestData = $request->all();
                 $requestData['user_id'] = $requestData['user_id'] ?? null;
                 $requestData['title'] = $requestData['title'] ?? '';
+                $requestData['singer_name'] = $requestData['singer_name'] ?? '';
                 $requestData['file_path'] = null;
                 $requestData['created_at'] = now();
                 $requestData['updated_at'] = now();
@@ -93,7 +91,7 @@
                     'trace' => $e->getTraceAsString()
                 ]);
 
-                return $this->sendResponse(false, 'Something went wrong!!!', []);
+                return $this->sendResponse(false, 'Something went wrong!!!', [], 500);
             }
         }
 
@@ -117,7 +115,7 @@
                     'trace' => $e->getTraceAsString()
                 ]);
 
-                return $this->sendResponse(false, 'Something went wrong!!!', []);
+                return $this->sendResponse(false, 'Something went wrong!!!', [], 500);
             }
         }
 
@@ -135,14 +133,14 @@
             } catch (Exception $e) {
 
                 // Log the error
-                Log::error('Error in retreving Music: ', [
+                Log::error('Error in retrieving Music: ', [
                     'message' => $e->getMessage(),
                     'code' => $e->getCode(),
                     'line' => $e->getLine(),
                     'trace' => $e->getTraceAsString()
                 ]);
 
-                return $this->sendResponse(false, 'Something went wrong!!!', []);
+                return $this->sendResponse(false, 'Something went wrong!!!', [], 500);
             }
         }
 
@@ -150,9 +148,10 @@
         {
             try {
                 $rules = [
-                    'music_id'  => 'required|exists:musics,id',
-                    'title'     => 'required|string|max:100',
-                    'file'      => 'nullable|mimetypes:audio/mpeg,audio/mp3|max:5120',
+                    'music_id'    => 'required|exists:musics,id',
+                    'title'       => 'required|string|max:100',
+                    'singer_name' => 'nullable|string|max:100',
+                    'file'        => 'nullable|mimetypes:audio/mpeg,audio/mp3|max:5120',
                 ];
 
                 $validator = Validator::make($request->all(), $rules);
@@ -170,6 +169,7 @@
                 $requestData = $request->except(['music_id', 'file']);
                 $requestData['user_id'] = $requestData['user_id'] ?? $music->user_id;
                 $requestData['title'] = $requestData['title'] ?? $music->title;
+                $requestData['singer_name'] = $requestData['singer_name'] ?? $music->singer_name;
                 $requestData['file_path'] = $music->file_path;
                 $requestData['updated_at'] = now();
 
@@ -179,7 +179,9 @@
                         $requestData['file_path'] = $filePath ?? '';
                     }
 
-                $music = Music::where('id', $musicId)->update($requestData);
+                Music::where('id', $musicId)->update($requestData);
+
+                $music = Music::find($musicId);
 
                 return $this->sendResponse(true, 'Music updated successfully.', $music);
             } catch (Exception $e) {
@@ -192,7 +194,7 @@
                     'trace' => $e->getTraceAsString()
                 ]);
 
-                return $this->sendResponse(false, 'Something went wrong!!!', []);
+                return $this->sendResponse(false, 'Something went wrong!!!', [],500);
             }
         }
 
@@ -229,7 +231,7 @@
                     'trace' => $e->getTraceAsString()
                 ]);
 
-                return $this->sendResponse(false, 'Something went wrong!!!', []);
+                return $this->sendResponse(false, 'Something went wrong!!!', [], 500);
             }
         }
 

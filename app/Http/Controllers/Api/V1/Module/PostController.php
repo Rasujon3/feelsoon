@@ -14,8 +14,10 @@
     use Illuminate\Http\JsonResponse;
     use Illuminate\Http\Request;
     use Illuminate\Support\Facades\DB;
+    use Illuminate\Support\Facades\Log;
     use Illuminate\Support\Facades\Validator;
     use App\Http\Resources\Api\V1\UserResource;
+    use Exception;
 
     class PostController extends Controller
     {
@@ -154,187 +156,217 @@
 
         public function store(Request $request): JsonResponse
         {
-            $rules = [
-                // Common Input for all type
-                'user_type' => 'required|in:user,page', // user, page
-                'privacy' => 'required|in:public,private', // public, private
-                // 'text' => 'required', // content
-                'post_latitude' => 'required',
-                'post_longitude' => 'required',
-                // 'post_type' => 'nullable', // photos, videos
-//                'medias' => 'required|file',
-            ];
+            try {
+                $rules = [
+                    // Common Input for all type
+                    'user_type' => 'required|in:user,page', // user, page
+                    'privacy' => 'required|in:public,private', // public, private
+                    'text' => 'nullable|string', // content
+                    'post_latitude' => 'required',
+                    'post_longitude' => 'required',
+                    'post_type' => 'nullable|in:photos,videos', // photos, videos
+                    'medias' => 'required|array',
+                    'medias.*' => 'file|mimes:jpg,jpeg,png,gif,mp4|max:10240', // 10MB
+                    'location' => 'nullable|string',
+                    'music_id' => 'nullable|exists:musics,id',
+                ];
 
-            $validator = Validator::make($request->post(), $rules);
-            if ($validator->fails()) {
-                $error = $validator->errors()->all(':message');
+                # $validator = Validator::make($request->post(), $rules);
+                $validator = Validator::make($request->all(), $rules);
+                if ($validator->fails()) {
+                    $error = $validator->errors()->all(':message');
 
-                return $this->sendResponse(false, $error[0]);
-            }
+                    return $this->sendResponse(false, $error[0]);
+                }
 
-            $loginUserId = auth('sanctum')->id();
+                $loginUserId = auth('sanctum')->id();
 
-            /*if ($request->post('post_type') == 'photos' && empty($request->file('medias'))) {
-            return $this->sendResponse(FALSE, 'Media file is required.');
-            }
-            if ($request->post('post_type') == 'videos' && empty($request->file('media'))) {
-            return $this->sendResponse(FALSE, 'Media file is required.');
-            }*/
-            if (empty($request->file('medias'))) {
-                return $this->sendResponse(false, 'Media file is required.');
-            }
+                /*if ($request->post('post_type') == 'photos' && empty($request->file('medias'))) {
+                return $this->sendResponse(FALSE, 'Media file is required.');
+                }
+                if ($request->post('post_type') == 'videos' && empty($request->file('media'))) {
+                return $this->sendResponse(FALSE, 'Media file is required.');
+                }*/
+                if (empty($request->file('medias'))) {
+                    return $this->sendResponse(false, 'Media file is required.');
+                }
 
-            $requestData = $request->post();
-            $requestData['post_type'] = $requestData['post_type'] ?? '';
-            $requestData['photo_type'] = $requestData['photo_type'] ?? '1';
-            $requestData['user_id'] = auth('sanctum')->id();
-            $requestData['time'] = now()->format("Y-m-d H:i:s");
-            $requestData['has_approved'] = "1";
-            $requestData['for_adult'] = $requestData['for_adult'] ?? "0";
-            $requestData['is_anonymous'] = $requestData['is_anonymous'] ?? "0";
-            $requestData['post_latitude'] = $requestData['post_latitude'] ?? "0";
-            $requestData['post_longitude'] = $requestData['post_longitude'] ?? "0";
-            $requestData['comments_disabled'] = $requestData['comments_disabled'] ?? "0";
-            $post = Post::create($requestData);
+                $requestData = $request->post();
+                $requestData['post_type'] = $requestData['post_type'] ?? '';
+                $requestData['photo_type'] = $requestData['photo_type'] ?? '1';
+                $requestData['user_id'] = auth('sanctum')->id();
+                $requestData['time'] = now()->format("Y-m-d H:i:s");
+                $requestData['has_approved'] = "1";
+                $requestData['for_adult'] = $requestData['for_adult'] ?? "0";
+                $requestData['is_anonymous'] = $requestData['is_anonymous'] ?? "0";
+                $requestData['post_latitude'] = $requestData['post_latitude'] ?? "0";
+                $requestData['post_longitude'] = $requestData['post_longitude'] ?? "0";
+                $requestData['comments_disabled'] = $requestData['comments_disabled'] ?? "0";
+                $post = Post::create($requestData);
 
-            if (!empty($post)) {
-                if ($requestData['post_type'] == 'photos') {
-                    $album = PostPhotoAlbum::where('user_id', $loginUserId)->where('user_type', 'user')->where('privacy', $post->privacy)->first();
+                if (!empty($post)) {
+                    if ($requestData['post_type'] === 'photos') {
+                        $album = PostPhotoAlbum::where('user_id', $loginUserId)
+                            ->where('user_type', 'user')
+                            ->where('privacy', $post->privacy)
+                            ->first();
 
-                    if (empty($album)) {
-                        $album = PostPhotoAlbum::create([
-                            'user_id' => $loginUserId,
-                            'user_type' => $requestData['user_type'],
-                            'title' => $requestData['text'],
-                            'privacy' => $requestData['privacy'],
-                        ]);
-                    }
-
-                    // Multiple file upload
-                    $medias = $request->file('medias');
-                    foreach ($medias as $media) {
-                        $fileName = time() . '.' . $media->getClientOriginalName();
-
-                        PostPhoto::create([
-                            'post_id' => $post->post_id,
-                            'album_id' => $album->album_id,
-                            'source' => $this->verifyAndUpload($media, $fileName, 'photos/' . date('Y') . '/' . date('m')),
-                        ]);
-                    }
-                } else if ($requestData['post_type'] == 'videos') {
-                    $thumbnail = $request->file('thumbnail');
-                    $thumbnailPath = null;
-                    if (!empty($thumbnail)) {
-                        $fileName = time() . '.' . $thumbnail->getClientOriginalName();
-                        $thumbnailPath = $this->verifyAndUpload($thumbnail, $fileName, 'videos/' . date('Y') . '/' . date('m'));
-                    }
-
-                    // Multiple file upload
-                    $medias = $request->file('medias');
-                    foreach ($medias as $media) {
-                        // $fileName = time() . '.' . $media->getClientOriginalName();
-                        $fileName = $media->getClientOriginalName();
-                        $fileExtension = $media->getClientOriginalExtension();
-                        $sourceVideo = $this->verifyAndUpload($media, $fileName, 'videos/' . $post->post_id, true);
-
-                        if ($fileExtension == 'm3u8') {
-                            DB::table('posts_videos')->insert([
-                                'post_id' => $post->post_id,
-                                'category_id' => $requestData['category_id'],
-                                'source' => $sourceVideo,
-                                'thumbnail' => $thumbnailPath,
+                        if (empty($album)) {
+                            $album = PostPhotoAlbum::create([
+                                'user_id' => $loginUserId,
+                                'user_type' => $requestData['user_type'],
+                                'title' => $requestData['text'],
+                                'privacy' => $requestData['privacy'],
                             ]);
                         }
+
+                        // Multiple file upload
+                        $medias = $request->file('medias');
+                        foreach ($medias as $media) {
+                            $fileName = time() . '.' . $media->getClientOriginalName();
+
+                            PostPhoto::create([
+                                'post_id' => $post->post_id,
+                                'album_id' => $album->album_id,
+                                'source' => $this->verifyAndUpload($media, $fileName, 'photos/' . date('Y') . '/' . date('m')),
+                            ]);
+                        }
+                    } else if ($requestData['post_type'] == 'videos') {
+                        $thumbnail = $request->file('thumbnail');
+                        $thumbnailPath = null;
+                        if (!empty($thumbnail)) {
+                            $fileName = time() . '.' . $thumbnail->getClientOriginalName();
+                            $thumbnailPath = $this->verifyAndUpload($thumbnail, $fileName, 'videos/' . date('Y') . '/' . date('m'));
+                        }
+
+                        // Multiple file upload
+                        $medias = $request->file('medias');
+                        foreach ($medias as $media) {
+                            // $fileName = time() . '.' . $media->getClientOriginalName();
+                            $fileName = $media->getClientOriginalName();
+                            $fileExtension = $media->getClientOriginalExtension();
+                            $sourceVideo = $this->verifyAndUpload($media, $fileName, 'videos/' . $post->post_id, true);
+
+                            if ($fileExtension == 'm3u8') {
+                                DB::table('posts_videos')->insert([
+                                    'post_id' => $post->post_id,
+                                    'category_id' => $requestData['category_id'],
+                                    'source' => $sourceVideo,
+                                    'thumbnail' => $thumbnailPath,
+                                ]);
+                            }
+                        }
                     }
-                }
 
-                if(!empty($request->post('mention_user_ids'))) {
-                    foreach($request->post('mention_user_ids') as $mentionUserId) {
-                        $newPost = $post->replicate();
-                        $newPost->parent_post_id = $post->post_id;
-                        $newPost->user_id = $mentionUserId;
-                        $newPost->save();
+                    if(!empty($request->post('mention_user_ids'))) {
+                        foreach($request->post('mention_user_ids') as $mentionUserId) {
+                            $newPost = $post->replicate(); // Clone the original post
+                            $newPost->parent_post_id = $post->post_id;
+                            $newPost->user_id = $mentionUserId;
+                            $newPost->save();
 
-                        if ($requestData['post_type'] == 'photos') {
-                            $album = PostPhotoAlbum::where('user_id', $mentionUserId)->where('user_type', 'user')->where('privacy', $post->privacy)->first();
+                            if ($requestData['post_type'] === 'photos') {
+                                $album = PostPhotoAlbum::where('user_id', $mentionUserId)
+                                    ->where('user_type', 'user')
+                                    ->where('privacy', $post->privacy)
+                                    ->first();
 
-                            if (empty($album)) {
-                                $album = PostPhotoAlbum::create([
-                                    'user_id' => $mentionUserId,
-                                    'user_type' => $requestData['user_type'],
-                                    'title' => $requestData['text'],
-                                    'privacy' => $requestData['privacy'],
-                                ]);
-                            }
-
-                            // Multiple file upload
-                            $medias = $request->file('medias');
-                            foreach ($medias as $media) {
-                                $fileName = time() . '.' . $media->getClientOriginalName();
-
-                                PostPhoto::create([
-                                    'post_id' => $newPost->post_id,
-                                    'album_id' => $album->album_id,
-                                    'source' => $this->verifyAndUpload($media, $fileName, 'photos/' . date('Y') . '/' . date('m')),
-                                ]);
-                            }
-                        } else if ($requestData['post_type'] == 'videos') {
-                            $thumbnail = $request->file('thumbnail');
-                            $thumbnailPath = null;
-                            if (!empty($thumbnail)) {
-                                $fileName = time() . '.' . $thumbnail->getClientOriginalName();
-                                $thumbnailPath = $this->verifyAndUpload($thumbnail, $fileName, 'videos/' . date('Y') . '/' . date('m'));
-                            }
-
-                            // Multiple file upload
-                            $medias = $request->file('medias');
-                            foreach ($medias as $media) {
-                                // $fileName = time() . '.' . $media->getClientOriginalName();
-                                $fileName = $media->getClientOriginalName();
-                                $fileExtension = $media->getClientOriginalExtension();
-                                $sourceVideo = $this->verifyAndUpload($media, $fileName, 'videos/' . $mentionUserId->post_id, true);
-
-                                if ($fileExtension == 'm3u8') {
-                                    DB::table('posts_videos')->insert([
-                                        'post_id' => $newPost->post_id,
-                                        'category_id' => $requestData['category_id'],
-                                        'source' => $sourceVideo,
-                                        'thumbnail' => $thumbnailPath,
+                                if (empty($album)) {
+                                    $album = PostPhotoAlbum::create([
+                                        'user_id' => $mentionUserId,
+                                        'user_type' => $requestData['user_type'],
+                                        'title' => $requestData['text'],
+                                        'privacy' => $requestData['privacy'],
                                     ]);
                                 }
+
+                                // Multiple file upload
+                                $medias = $request->file('medias');
+                                foreach ($medias as $media) {
+                                    $fileName = time() . '.' . $media->getClientOriginalName();
+
+                                    PostPhoto::create([
+                                        'post_id' => $newPost->post_id,
+                                        'album_id' => $album->album_id,
+                                        'source' => $this->verifyAndUpload($media, $fileName, 'photos/' . date('Y') . '/' . date('m')),
+                                    ]);
+                                }
+                            } else if ($requestData['post_type'] == 'videos') {
+                                $thumbnail = $request->file('thumbnail');
+                                $thumbnailPath = null;
+                                if (!empty($thumbnail)) {
+                                    $fileName = time() . '.' . $thumbnail->getClientOriginalName();
+                                    $thumbnailPath = $this->verifyAndUpload($thumbnail, $fileName, 'videos/' . date('Y') . '/' . date('m'));
+                                }
+
+                                // Multiple file upload
+                                $medias = $request->file('medias');
+                                foreach ($medias as $media) {
+                                    // $fileName = time() . '.' . $media->getClientOriginalName();
+                                    $fileName = $media->getClientOriginalName();
+                                    $fileExtension = $media->getClientOriginalExtension();
+                                    $sourceVideo = $this->verifyAndUpload($media, $fileName, 'videos/' . $mentionUserId->post_id, true);
+
+                                    if ($fileExtension == 'm3u8') {
+                                        DB::table('posts_videos')->insert([
+                                            'post_id' => $newPost->post_id,
+                                            'category_id' => $requestData['category_id'],
+                                            'source' => $sourceVideo,
+                                            'thumbnail' => $thumbnailPath,
+                                        ]);
+                                    }
+                                }
+                            }
+
+                            $mentionUser = User::find($mentionUserId);
+                            if(!empty($mentionUser->device_token)) {
+                                $pushMessage = auth('sanctum')->user()->first_name . ' mentioned you in their post.';
+                                $pushData = [
+                                    'user_id' => $loginUserId,
+                                    'post_id' => $post->post_id,
+                                    'clone_post_id' => $newPost->post_id
+                                ];
+                                $this->sendNotification($mentionUser->device_token. 'Mentioned', $pushMessage, $pushData);
                             }
                         }
-
-                        $mentionUser = User::find($mentionUserId);
-                        if(!empty($mentionUser->device_token)) {
-                            $pushMessage = auth('sanctum')->user()->first_name . ' mentioned you in their post.';
-                            $pushData = [
-                                'user_id' => $loginUserId,
-                                'post_id' => $post->post_id,
-                                'clone_post_id' => $newPost->post_id
-                            ];
-                            $this->sendNotification($mentionUser->device_token. 'Mentioned', $pushMessage, $pushData);
-                        }
                     }
+
+                    /*
+                    $post = Post::selectRaw(
+                        'posts.*,
+                        posts_photos.source,
+                        posts_videos.source as source_video,
+                        posts_videos.thumbnail,
+                        musics.*,
+                        category_name'
+                    )
+                        ->leftJoin('posts_photos', 'posts.post_id', 'posts_photos.post_id')
+                        ->leftJoin('posts_videos', 'posts.post_id', 'posts_videos.post_id')
+                        ->leftJoin('posts_videos_categories', 'posts_videos.category_id', 'posts_videos_categories.category_id')
+                        ->leftJoin('musics', 'posts.music_id', 'musics.id')
+                        ->find($post->post_id);
+                    */
+
+                    $post = Post::with(['user', 'photos', 'videos', 'musics', 'shared'])->find($post->post_id);
+
+                    $post = PostResource::make($post) ?? null;
+
+                    return $this->sendResponse(true, 'Post created successfully.', $post);
                 }
 
-                $post = Post::selectRaw(
-                            'posts.*,
-                            posts_photos.source,
-                            posts_videos.source as source_video,
-                            posts_videos.thumbnail,
-                            category_name'
-                            )
-                    ->leftJoin('posts_photos', 'posts.post_id', 'posts_photos.post_id')
-                    ->leftJoin('posts_videos', 'posts.post_id', 'posts_videos.post_id')
-                    ->leftJoin('posts_videos_categories', 'posts_videos.category_id', 'posts_videos_categories.category_id')
-                    ->find($post->post_id);
-                $post = PostResource::make($post) ?? null;
+                return $this->sendResponse(false, 'Something went wrong, Please try again');
+            } catch (Exception $e) {
 
-                return $this->sendResponse(true, 'Post created successfully.', $post);
+                // Log the error
+                Log::error('Error in store Post: ', [
+                    'message' => $e->getMessage(),
+                    'code' => $e->getCode(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+
+                return $this->sendResponse(false, 'Something went wrong!!!', []);
             }
-
-            return $this->sendResponse(false, 'Something went wrong, Please try again');
         }
 
         public function views(Request $request): JsonResponse

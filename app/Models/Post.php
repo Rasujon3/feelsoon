@@ -63,6 +63,7 @@
             "post_longitude",
             "deleted_at",
             "photo_type",
+            "music_id",
             "parent_post_id"
         ];
 
@@ -99,6 +100,10 @@
         public function shared()
         {
             return $this->hasMany(PostShare::class, 'post_id', 'post_id');
+        }
+        public function musics()
+        {
+            return $this->belongsTo(Music::class, 'music_id', 'id');
         }
 
     }
