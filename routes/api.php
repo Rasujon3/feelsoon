@@ -6,7 +6,8 @@
     use App\Http\Controllers\Api\V1\Module\ChatController;
     use App\Http\Controllers\Api\V1\Module\CommentController;
     use App\Http\Controllers\Api\V1\Module\LikeController;
-    use App\Http\Controllers\Api\V1\Module\MusicController;
+use App\Http\Controllers\Api\V1\Module\LocationController;
+use App\Http\Controllers\Api\V1\Module\MusicController;
     use App\Http\Controllers\Api\V1\Module\PostController;
     use App\Http\Controllers\Api\V1\Module\ShareController;
     use App\Http\Controllers\Api\V1\Module\UserController;
@@ -134,5 +135,7 @@
                 Route::post('/', [NotificationController::class, 'index'])->name('index');
                 // Route::post('destroy', [NotificationController::class, 'destroy']);
             });
+
+            Route::get('/get-location', [LocationController::class, 'getLocation']);
         });
     });

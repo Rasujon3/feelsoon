@@ -37,6 +37,20 @@ return [
 
     'firebase' => [
         'server-key' => env('FIREBASE_SERVER_KEY')
+    ],
+
+    'geoapify' => [
+        'base_url' => env('GEOAPIFY_BASE_URL'),
+        'api_key' => env('GEOAPIFY_API_KEY'),
+    ],
+
+    'opencagedata' => [
+        'base_url' => env('OPENCAGEDATA_BASE_URL'),
+        'api_key' => env('OPENCAGEDATA_API_KEY'),
+    ],
+
+    'countries_now' => [
+        'base_url' => env('COUNTRIES_NOW_BASE_URL'),
     ]
 
 ];

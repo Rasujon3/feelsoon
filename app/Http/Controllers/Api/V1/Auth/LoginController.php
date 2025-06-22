@@ -36,14 +36,14 @@
                     'user_latitude' => 'required',
                     'user_longitude' => 'required',
                     'user_country' => ['nullable', 'integer', 'exists:system_countries,country_id'],
-                    'user_language' => ['nullable', 'integer', 'exists:system_languages,language_id'],
+                    'user_language' => ['nullable', 'string'],
                     'user_firstname' => ['nullable', 'string', 'max:256'],
                     'user_lastname' => ['nullable', 'string', 'max:256'],
                     'user_birthdate' => ['nullable', 'date'],
                     'user_gender' => ['nullable', 'integer', 'exists:system_genders,gender_id'],
                     'user_picture' => ['nullable', 'file', 'mimes:jpeg,png,jpg,gif', 'max:2048'],
                     'user_cover' => ['nullable', 'file', 'mimes:jpeg,png,jpg,gif', 'max:2048'],
-                    'user_interests'   => 'required|array',
+                    'user_interests'   => 'nullable|array',
                     'user_interests.*' => 'exists:pages_categories,category_id',
               ];
 
