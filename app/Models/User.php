@@ -204,6 +204,7 @@
             return [
                 //'email_verified_at' => 'datetime',
                 'user_password' => 'hashed',
+                'user_interests' => 'array',
             ];
         }
 
