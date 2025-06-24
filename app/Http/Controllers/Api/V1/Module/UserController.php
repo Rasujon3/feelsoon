@@ -11,9 +11,12 @@
     use App\Models\UserBlock;
     use App\Models\UserInterest;
     use App\Traits\Api\UniformResponseTrait;
+    use App\Traits\SendPushNotificationTrait;
+    use Exception;
     use Illuminate\Http\JsonResponse;
     use Illuminate\Http\Request;
     use Illuminate\Support\Facades\DB;
+    use Illuminate\Support\Facades\Log;
     use Illuminate\Support\Facades\Validator;
 
     class UserController extends Controller
@@ -23,90 +26,185 @@
 
         public function index(Request $request)
         {
-            $search = $request->post('search');
-            $sortBy = $request->post('sort_by');
-            $sortOrder = $request->post('sort_order');
-            $type = $request->post('type', 'all'); // all, followings, followers, blocked, follow-request
-            $latitude = $request->post('latitude', '0');
-            $longitude = $request->post('longitude', '0');
-            $userId = $request->post('userId', '0');
-            $loginUserId = auth('sanctum')->id();
-            $checkDistance = true;
+            try {
+                $search = $request->post('search');
+                $sortBy = $request->post('sort_by');
+                $sortOrder = $request->post('sort_order');
+                $type = $request->post('type', 'all'); // all, followings, followers, blocked, follow-request
+                $latitude = $request->post('latitude', '0');
+                $longitude = $request->post('longitude', '0');
+                $userId = $request->post('userId', '0');
+                $loginUserId = auth('sanctum')->id();
+                $checkDistance = true;
 
-            RECALL_QUERY:
+                RECALL_QUERY:
 
-            $users = User::selectRaw('*, (6371 * ACOS(
+                $users = User::selectRaw('*, (6371 * ACOS(
                     COS(RADIANS(' . $latitude . ')) * COS(RADIANS(user_latitude)) *
                     COS(RADIANS(user_longitude) - RADIANS(' . $longitude . ')) + SIN(RADIANS(' . $latitude . ')) * SIN(RADIANS(user_latitude))
                 )) as distance,
                 (select id from friends where user_one_id = '.$loginUserId.' and user_two_id = users.user_id limit 1) as is_requested,
                 (select id from users_blocks where user_id = '.$loginUserId.' and blocked_id = users.user_id limit 1) as is_blocked
                 ')
-                ->where('user_id', '!=', $loginUserId)
-                // ->where('user_verified', 1)
-                ->when(!empty($search), function ($q) use ($search) {
-                    $q->where(function ($q1) use ($search) {
-                        $q1->where('user_name', 'LIKE', "%$search%")
-                            ->orWhere('user_firstname', 'LIKE', "%$search%")
-                            ->orWhere('user_lastname', 'LIKE', "%$search%")
-                            ->orWhere('user_biography', 'LIKE', "%$search%");
+                    ->where('user_id', '!=', $loginUserId)
+                    // ->where('user_verified', 1)
+                    ->when(!empty($search), function ($q) use ($search) {
+                        $q->where(function ($q1) use ($search) {
+                            $q1->where('user_name', 'LIKE', "%$search%")
+                                ->orWhere('user_firstname', 'LIKE', "%$search%")
+                                ->orWhere('user_lastname', 'LIKE', "%$search%")
+                                ->orWhere('user_biography', 'LIKE', "%$search%");
+                        });
+                    })
+                    ->when(!empty($type) && $type != 'all', function ($q) use ($type, $loginUserId, $userId) {
+                        if ($type == 'following') {
+                            $q->whereRaw('user_id in (select following_id from followings where user_id = ' . (!empty($userId) ? $userId : $loginUserId) . ' and status = 1)');
+                        }
+                        else if ($type == 'followers') {
+                            $q->whereRaw('user_id in (select user_id from followings where following_id = ' . (!empty($userId) ? $userId : $loginUserId) . ' and status = 1)');
+                        }
+                        else if ($type == 'blocked') {
+                            $q->whereRaw('user_id in (select blocked_id from users_blocks where user_id = ' . $loginUserId . ')');
+                        }
+                        else if ($type == 'follow-request') {
+                            $q->whereRaw('user_id in (select user_one_id from friends where user_two_id = ' . $loginUserId . ')');
+                            $q->whereRaw('user_id not in (select following_id from followings where user_id = ' . (!empty($userId) ? $userId : $loginUserId) . ')');
+                        }
+                        else {
+                            $q->whereRaw('user_id not in (select blocked_id from users_blocks where user_id = ' . $loginUserId . ')');
+                        }
+                    })
+                    ->when(!empty($sortBy) && !empty($sortOrder), function ($q) use ($sortBy, $sortOrder) {
+                        $q->orderBy($sortBy, $sortOrder);
+                    })
+                    ->when(empty($isLatest) && (empty($sortBy) || empty($sortOrder)), function ($q) {
+                        $q->inRandomOrder();
+                    })
+                    ->when(!empty($latitude) && !empty($longitude) && $type == 'suggestion', function ($q) use ($loginUserId, $checkDistance) {
+                        // Followings
+                        $q->whereRaw('user_id not in (select following_id from followings where user_id = ' . $loginUserId . ')');
+                        // Followers
+                        // $q->whereRaw('user_id not in (select user_id from followings where following_id = ' . loginUserId . ')');
+                        $q
+                            //->having('distance', '<=', $checkDistance == true ? 100 : 1000)
+                            ->orderBy('distance', 'asc');
                     });
-                })
-                ->when(!empty($type) && $type != 'all', function ($q) use ($type, $loginUserId, $userId) {
-                    if ($type == 'following') {
-                        $q->whereRaw('user_id in (select following_id from followings where user_id = ' . (!empty($userId) ? $userId : $loginUserId) . ')');
-                    }
-                    else if ($type == 'followers') {
-                        $q->whereRaw('user_id in (select user_id from followings where following_id = ' . (!empty($userId) ? $userId : $loginUserId) . ')');
-                    }
-                    else if ($type == 'blocked') {
-                        $q->whereRaw('user_id in (select blocked_id from users_blocks where user_id = ' . $loginUserId . ')');
-                    }
-                    else if ($type == 'follow-request') {
-                        $q->whereRaw('user_id in (select user_one_id from friends where user_two_id = ' . $loginUserId . ')');
-                        $q->whereRaw('user_id not in (select following_id from followings where user_id = ' . (!empty($userId) ? $userId : $loginUserId) . ')');
-                    }
-                    else {
-                        $q->whereRaw('user_id not in (select blocked_id from users_blocks where user_id = ' . $loginUserId . ')');
-                    }
-                })
-                ->when(!empty($sortBy) && !empty($sortOrder), function ($q) use ($sortBy, $sortOrder) {
-                    $q->orderBy($sortBy, $sortOrder);
-                })
-                ->when(empty($isLatest) && (empty($sortBy) || empty($sortOrder)), function ($q) {
-                    $q->inRandomOrder();
-                })
-                ->when(!empty($latitude) && !empty($longitude) && $type == 'suggestion', function ($q) use ($loginUserId, $checkDistance) {
-                    // Followings
-                    $q->whereRaw('user_id not in (select following_id from followings where user_id = ' . $loginUserId . ')');
-                    // Followers
-                    // $q->whereRaw('user_id not in (select user_id from followings where following_id = ' . loginUserId . ')');
-                    $q
-                        //->having('distance', '<=', $checkDistance == true ? 100 : 1000)
-                    ->orderBy('distance', 'asc');
-                });
 
-            $users = $users->withCount('followings', 'followers')->paginate(20);
-            $totalRecords = $users->total();
-            if($totalRecords == 0 && $checkDistance == true) {
-                $checkDistance = false;
-                goto RECALL_QUERY;
+                $users = $users->withCount('followings', 'followers')->paginate(20);
+                $totalRecords = $users->total();
+                if($totalRecords == 0 && $checkDistance == true) {
+                    $checkDistance = false;
+                    goto RECALL_QUERY;
+                }
+                $totalPages = $users->lastPage();
+                $users = UserResource::collection($users->items());
+                $currentPage = $request->post('page', 1);
+
+                $response = [
+                    'total_records' => $totalRecords,
+                    'total_pages' => $totalPages,
+                    'current_page' => $currentPage,
+                    'users' => !empty($users) ? $users : NULL,
+                ];
+
+                return $this->sendResponse(TRUE, 'Users data get successfully', $response);
+            } catch(Exception $e) {
+                // Log the error
+                Log::error('Error in retrieving users: ', [
+                    'message' => $e->getMessage(),
+                    'code' => $e->getCode(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return $this->sendResponse(false, 'Something went wrong!!!', [], 500);
             }
-            $totalPages = $users->lastPage();
-            $users = UserResource::collection($users->items());
-            $currentPage = $request->post('page', 1);
-
-            $response = [
-                'total_records' => $totalRecords,
-                'total_pages' => $totalPages,
-                'current_page' => $currentPage,
-                'users' => !empty($users) ? $users : NULL,
-            ];
-
-            return $this->sendResponse(TRUE, 'Users data get successfully', $response);
         }
 
         public function followUnfollowUser(Request $request)
+        {
+            $rules = [
+                'user_id' => 'required|exists:users,user_id'
+            ];
+
+            $validator = Validator::make($request->post(), $rules);
+
+            if ($validator->fails()) {
+                $error = $validator->errors()->all(':message');
+
+                return $this->sendResponse(FALSE, $error[0]);
+            }
+
+            $loginUserId = auth('sanctum')->id();
+            $followUserId = $request->post('user_id');
+            $friendRequestId = $request->post('friend_request_id', '0');
+
+            try {
+                $checkUserPrivacy = User::find($followUserId);
+                $loggedUser = User::find($loginUserId);
+
+                if (!empty($checkUserPrivacy && !empty($loggedUser))) {
+                    // Prevent users from following themselves
+                    $message = 'You cannot follow yourself.';
+                    if ($checkUserPrivacy->user_id === $loggedUser->user_id) {
+                        return $this->sendResponse(false, $message, [], 422);
+                    }
+
+                    $followUser = Following::where('user_id', $loginUserId)
+                        ->where('following_id', $followUserId)
+                        ->first();
+
+                    $message = 'Following the user successfully';
+                    if (!empty($followUser) && !empty($followUser->id)) {
+                        $followUser->delete();
+                        $message = 'Unfollow the user successfully';
+                    }
+                    else {
+                        $status = ($checkUserPrivacy->user_privacy_followers === 'public' && $loggedUser->user_privacy_followers === 'public') ? 1 : 0;
+                        $message = $status === 0 ? 'Follow request sent successfully' : 'Following the user successfully';
+
+                        Following::create([
+                            'user_id' => $loginUserId,
+                            'following_id' => $followUserId,
+                            'status' => $status,
+                            'time' => now()->format('Y-m-d H:i:s')
+                        ]);
+
+                        Notification::create([
+                            'to_user_id' => $followUserId,
+                            'from_user_id' => $loginUserId,
+                            'from_user_type' => 'user',
+                            'node_type' => 'user',
+                            'node_url' => $loginUserId,
+                            'action' => 'follow',
+                            'message' => $status === 1 ? 'started following you' : 'want to follow you',
+                            'time' => now()->format('Y-m-d H:i:s')
+                        ]);
+
+                        if(!empty($checkUserPrivacy->device_token)) {
+                            $pushMessageFormat = $status === 1 ? ' started following you.' : ' want to follow you';
+                            $pushMessage = auth('sanctum')->user()->first_name . $pushMessageFormat;
+                            $pushData = [
+                                'user_id' => $loginUserId
+                            ];
+                            $this->sendNotification($checkUserPrivacy->device_token. 'Following', $pushMessage, $pushData);
+                        }
+                    }
+                }
+
+                return $this->sendResponse(TRUE, $message);
+            } catch(Exception $e) {
+                // Log the error
+                Log::error('Error in follow unfollow users: ', [
+                    'message' => $e->getMessage(),
+                    'code' => $e->getCode(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return $this->sendResponse(false, 'Something went wrong!!!', [], 500);
+            }
+        }
+
+        public function followUnfollowUserBK(Request $request)
         {
             $rules = [
                 'user_id' => 'required|exists:users,user_id'
