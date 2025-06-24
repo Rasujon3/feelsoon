@@ -11,6 +11,7 @@
             'user_id',
             'following_id',
             'points_earned',
+            'status',
             'time'
         ];
 
